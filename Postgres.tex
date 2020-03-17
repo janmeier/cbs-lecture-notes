@@ -16,6 +16,14 @@
 \newmintinline{sql}{}
 \renewcommand{\listingscaption}{Eksempel}
 
+\RequirePackage{accsupp}
+\renewcommand\theFancyVerbLine{
+    \BeginAccSupp{method=escape,ActualText={}}
+    {\rmfamily\tiny\arabic{FancyVerbLine}}
+    \EndAccSupp{}
+
+}
+
 \begin{document}
 
 \section{Installation}
