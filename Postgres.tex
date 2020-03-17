@@ -1,0 +1,291 @@
+\documentclass[english,course]{lecture}
+
+\usepackage{minted}
+\usepackage{hyperref}
+\usepackage{caption}
+
+\title{Postgres intro}
+\attn{I kan finde kildekoden (skrevet i \LaTeX) til disse lecture notes på github - I er velkomne til at kommentere der hvis i finder fejl eller noget der kunne forklares bedre \url{https://github.com/janmeier/cbs-lecture-notes}}
+\author{Jan Aagaard Meier}
+\email{jam.digi@cbs.dk}
+
+\newminted{bash}{}
+\newminted{js}{linenos,tabsize=2,breaklines}
+\newminted{sql}{linenos,tabsize=2,breaklines}
+\newmintinline{js}{}
+\newmintinline{sql}{}
+\renewcommand{\listingscaption}{Eksempel}
+
+\begin{document}
+
+\section{Installation}
+Start med at installere PostgreSQL serveren fra \url{https://www.postgresql.org/download/}. Hvis du bliver bedt om at oprette bruger og password, så sørg for at huske det. Du kan også installere pgAdmin (\url{https://www.pgadmin.org/}), hvis du gerne vil have et interface hvor du kan browser tabeller også data.
+
+Derefter skal du installere pg, som er det node.js bibliotek vi bruger til at snakke med postgres. Det skal installeres i den mappe hvor resten af jeres kode ligger (for at holde tingene adskilt kan i eventuelt oprette en server mappe til database og server koden i jeres projektmappe). I terminalen (terminal på linux / OSX, Git bash på Windows) skriver i følgende:
+
+\begin{minted}{bash}
+npm install pg
+\end{minted}
+
+Derefter er det tid til at test at der er hul igennem til databasen - Det gør i med et kort stykke kode: 
+
+\begin{listing}[H]
+\caption{Test af forbindelsen til databasen}
+\label{lst:testconnection}
+\begin{jscode}
+const { Pool } = require('pg');
+const pool = new Pool({
+  host: 'localhost',
+  port: 5432,
+  user: 'test',
+  database: 'test',
+  password: 'test',
+});
+
+pool.query('SELECT NOW()').then(result => {
+  console.log(result.rows)
+  pool.end()
+});
+\end{jscode}
+\end{listing}
+
+I kan fx gemme det i en fil ved navn \mintinline{bash}{test.js} og køre \mintinline{bash}{node test.js} i terminalen.
+
+På linje 4-8 fortæller vi hvordan der skal forbindes til vores Postgres server. \jsinline/host: 'localhost'/
+ fortæller at Postgres kører på samme computer som vores node script, mens \jsinline/post: 5432/ fortæller hvilken port vi skal forbinde til. 5432 er Postgres' standardport, så disse to linjer kommer i sandsynligvis ikke til at ændre.
+
+\margintext{Vi bruger ofte udtrykket database i flæng til at beskrive både database serveren, og de individuelle databaser (samlinger af tabeller). I dette refererer database altid til en specifik samling af tabeller på en database}
+
+\jsinline/user/ og \jsinline/database/ vil i langt de fleste tilfælde være ens - Når Postgres opretter en bruger oprettes der nemlig en database med samme navn. \jsinline/password/ bør give sig selv.
+
+
+Hvis I har gjort alt rigtig bør i se noget i stil med dette i terminalen:
+
+\begin{bashcode}
+undefined [ { now: 2020-03-16T09:56:18.629Z } ]
+\end{bashcode}
+
+\jsinline/undefined/ betyder, at \jsinline/error/ ikke har nogen værdi, og at der altså ikke var nogen fejl. \jsinline/[...]/ er et array af rækker returneret fra databasen.
+
+Hvis i, mod forventning ser noget andet er her et cheatsheet til at prøve at regne ud hvorfor:
+
+\begin{table}[h]
+\begin{tabular}{|p{6cm}|p{6cm}|}
+\hline
+Error: connect ECONNREFUSED 127.0.0.1:5432           & Databasen er ikke startet, eller kører på en anden port           \\ \hline
+error: password authentication failed for user "tet" & Brugernavn eller password er forkert                              \\ \hline
+error: database "tet" does not exist                 & Navnet på databasen er forkert / brugeren har ikke adgang til den \\ \hline
+\end{tabular}
+\end{table}
+
+\section{Database setup}
+\subsection{Intro}
+
+I eksemplet ovenfor importerede vi \jsinline/Pool/ fra pg biblioteket. Biblioteket sørger for at opretholde en pulje af databaseforbindelser som vi kan genbruge, i stedet for at skulle åbne en ny forbindelse til databasen hver gang. Derfor er det vigtigt at i \textit{ikke} kalder \jsinline/pool.end()/ efter hver query som i eksempel \ref{lst:testconnection}.
+
+I de følgende eksempler antages det er \jsinline/pool/ variablen er tilgængelig, så vi definerer den ikke hver gang. I jeres eget projekt giver det heller ikke mening at lave en ny pool instans i hver fil hvor i skal bruge den. I stedet kan i definere den i een fil, eksportere den og så \jsinline/require/ den de steder den skal bruges:
+
+\begin{listing}[H]
+\caption{db.js}
+\begin{jscode}
+const { Pool, Client } = require('pg');
+
+const pool = new Pool({
+  ...
+});
+
+module.exports = pool;
+\end{jscode}
+\end{listing}
+
+\begin{listing}[H]
+\caption{user.js}
+\begin{jscode}
+const pool = require('./db');
+\end{jscode}
+\end{listing}
+
+\subsection{Oprettelse af tabeller}
+
+Lav en fil som indeholder al jeres database setup - Altså oprettelse af tabeller og testdata. På den måde kan alle i gruppen nemt sætte alle tabeller op når de skal udvikle på projektet, og vi kan nemt sætte projektet op når vi skal teste det inden eksamen.
+
+I kan med fordel køre hele oprettelsen som en enkelt kommando mod databasen, ved at adskille hver query med et semikolon.
+
+\begin{listing}[H]
+\caption{setup.js}
+\begin{jscode}
+pool.query(`
+	CREATE TABLE customer (...);
+	CREATE TABLE order (...);
+	INSERT INTO TABLE customer (id, name) VALUES (1, 'Jan');
+	INSERT INTO TABLE ...;
+`).then(result => {
+	console.log(error, result);
+});
+\end{jscode}
+\end{listing}
+
+I eksempel \ref{lst:createcustomer} herunder ses hvordan man kunne oprette en tabel med data om kunder. Først angives navnet på tabellen på linje 1, efterfulgt at kolonnerne omgivet af parenteser.
+
+På linje 2 angiver vi at tabellen har en id-kolonne, som kan ses som et unikt kundenummer. \sqlinline/SERIAL/ fortæller Postgres at den selv skal generere værdier, så vi ikke behøver at bekymre os om det. \sqlinline/PRIMARY KEY/ fortæller at det er tabellens primære nøgle, og at den er unik. 
+
+Derefter følger de andre kolonner, adskilt at et komma. \sqlinline/NOT NULL/ betyder at kolonnen skal have en værdi, mens \sqlinline/DEFAULT NOW()/ betyder at kolonnen har en default-værdi, så hvis der ikke er angivet en værdi for created\_at ved insert kalder Postgres funktionen \sqlinline/NOW/, som giver det nuværende dato og tidspunkt.
+
+\begin{listing}[H]
+\caption{Eksempel på oprettelse af tabel}
+\label{lst:createcustomer}
+\begin{sqlcode}
+CREATE TABLE "customer" (
+	id SERIAL PRIMARY KEY,
+	email text NOT NULL, 
+	password text NOT NULL, 
+	created_at date NOT NULL DEFAULT NOW(),
+	name text
+)
+\end{sqlcode}
+\end{listing}
+
+Når i skal modellere relationerne fra jeres klassediagram i SQL vil det højest sandsynligt være som separate tabeller i jeres database. Postgres har også en array datatype, således at en række kan indeholde et array af JSON objekter, lidt ligesom man kan i mongodb. Generelt vil jeg anbefale jer at modellere hver klasse i jeres diagram som separate tabeller i Postgres, med mindre i har en meget god grund til at gøre noget andet. Arrays i postgres kan være lidt besværlige at arbejde med, specielt i forhold til at indsætte / opdatere og slette elementer.
+
+For at modellere relationen customer og order kunne ordre tabellen se således ud (customer er angivet i eksempel \ref{lst:createcustomer}):
+
+\begin{listing}[H]
+\caption{Ordre tabel som refererer til customer}
+\label{lst:createorder}
+\begin{sqlcode}
+CREATE TABLE "order" (
+	id SERIAL PRIMARY KEY,
+	customer_id integer NOT NULL REFERENCES customer(id) ON DELETE CASCADE,
+	total_amount integer,
+	shipped boolean DEFAULT FALSE,
+	created_at date DEFAULT NOW()
+)
+\end{sqlcode}
+\end{listing}
+
+\margintext{Hvis i har lyst til flere eksempler, så tag et kig på Postgres' officielle dokumentation \url{https://www.postgresql.org/docs/12/sql-createtable.html\#SQL-CREATETABLE-EXAMPLES}.}
+
+
+På linje 3 angiver vi først at \sqlinline/customer_id/ er et integer (heltal), og at den ikke må være null. Derefter siger vi, at feltet refererer til id i customer tabellen, altså at der \textit{skal} findes en række i customer med det id. Hvis det ikke er tilfældet vil en insert / update query fejle. Endelig siger \sqlinline/ON DELETE CASCADE/ at hvis en række fra customer slettes skal alle de tilsvarende ordrer også slettes.
+
+\section{Queries}
+
+\margintext{Se også \url{https://www.datacamp.com/community/tutorials/beginners-introduction-postgresql} for flere eksempler}
+
+Når i skriver queries som afhænger af parametre som ikke er statiske (altså noget som kommer fra brugeren af jeres applikation), skal i \textit{altid} bruge det der kaldes \textit{parameterized queries} - \textbf{Lad være med selv at bygge jeres query ved at sætte strings sammen!} Forestil jer at i har et endpoint på jeres server hvor en admin bruger har mulighed for at søge efter kunder ud fra dele af deres emails:
+
+\begin{listing}[H]
+\caption{Don't try this at home!}
+\begin{jscode}
+pool.query(`SELECT * FROM customer WHERE email LIKE '${email}%'`)
+\end{jscode}
+\end{listing}
+
+Selvom admin brugeren er en betroet bruger i jeres system, er der stadig risiko for, at andre kan skaffe sig adgang til en admin konto, og udføre queries fra den. Det fører til SQL injections,\margintext{\url{https://www.xkcd.com/327/}} hvilket vil sige at en bad actor får mulighed for at udføre andre SQL queries end dem det var meningen. For at undgå dette, brug \textit{altid} replacements som det ses i eksempel \ref{lst:paramquery}.
+
+\begin{listing}[H]
+\caption{Brug altid parameterized queries til dynamiske værdier}
+\label{lst:paramquery}
+\begin{jscode}
+pool.query(`SELECT * FROM customer WHERE email LIKE $1`, [email + '%'])
+\end{jscode}
+\end{listing}
+
+Hvert parameter angives med dollartegn efterfulgt af et tal (så \$1 er det første element, osv.). I kan godt bruge det samme tal flere gange, hvis i fx vil matche både email og name op imod den samme værdi:
+
+\begin{sqlcode}
+WHERE email like $1 OR name like $1 AND shipped = $2
+\end{sqlcode}
+
+Når i skriver jeres query på denne måde er det database serveren der sørger for at indsætte værdierne i queryen, så i ikke selv skal bekymre jer om dette. 
+
+\subsection{SELECT}
+\margintext{\url{https://www.postgresql.org/docs/12/sql-select.html\#id-1.9.3.171.9}}
+
+En simpel mulige where query vælger alle kolonner fra en tabel, med en where statement. Det kunne fx være alle ordrer fra de sidste 7 dage, som ikke er shipped:
+
+\begin{listing}[h]
+\caption{Vælg alle ordrer fra de sidste 7 dage, som ikke er shipped}
+\begin{jscode}
+pool.query(`SELECT * FROM "order" WHERE shipped = false AND created_at >= NOW() - INTERVAL '7 days'`)
+\end{jscode}
+\end{listing}
+
+Da shipped værdien er en statisk værdi (vi vil altid have de ordrer som ikke er shipped) kan vi skrive den direkte i SQLen, i stedet for at bruge en parameterized query. 
+
+Hvis vi vil gøre tidsrummet dynamisk skal vi bruge en parameterized query, og omskrive queryen lidt:
+
+\begin{listing}[h]
+\caption{Vælg alle ordrer fra de sidste x dage, som ikke er shipped}
+\begin{jscode}
+pool.query(`SELECT * FROM "order" WHERE shipped = false AND created_at >= NOW() - $1::interval`, [`${days} days`])
+\end{jscode}
+\end{listing}
+
+\sqlinline/::interval/ er et typecast \margintext{\url{https://www.postgresql.org/docs/12/typeconv.html}} - vi fortæller postgres hvilken type vores parameter har, da den ikke kan regne det ud ud fra konteksten.
+
+I select queries har vi mulighed for at gruppere vores resultat efter en eller flere kolonner, og udregne værdier for disse grupper af kolonner. Det kunne fx være at beregne det gennemsnitlige ordrebeløb for hver kunde:
+
+\begin{listing}[H]
+\caption{Vælg det gennemsnitlige ordrebeløb for hver kunde}
+\begin{sqlcode}
+SELECT customer_id, AVG(total_amount)
+FROM order
+GROUP BY customer_id
+\end{sqlcode}
+\end{listing}
+
+Ved brug af \sqlinline/GROUP BY/ grupperes alle rækkerne først på den givne kolonne, og derefter udvælges de kolonner der angivet i select delen for hver gruppe. Outputtet kunne fx se således ud:
+
+\begin{table}[H]
+\begin{tabular}{ll}
+customer\_id & AVG(total\_amount) \\ \hline
+1            & 13.7               \\
+2            & 52.3              
+\end{tabular}
+\end{table}
+
+
+\subsection{INSERT}
+\margintext{\url{https://www.postgresql.org/docs/12/sql-insert.html\#id-1.9.3.152.9}}
+
+Ved en insert query angiver vi navnet på tabellen, efterfulgt at navnet på de kolonner som vi ønsker skal have en værdi. Alle de kolonner som udelades vil få deres default værdi, eller \sqlinline/NULL/, hvis de ikke har en default. Hvis nogle af kolonnerne er angivet som \sqlinline/NOT NULL/ vil queryen fejle. Vi afslutter med \sqlinline/RETURNING */, som returnerer de rækker der er blevet indsat, inklusive default værdier - (i dette tilfælde id og created\_at):
+
+\begin{listing}[H]
+\caption{INSERT eksempel}
+\label{lst:insertexample}
+\begin{jscode}
+pool.query(`INSERT INTO customer (email, password, name) VALUES ($1, $2, $3) RETURNING *`, ['test@example.com', 'password123', 'John Doe']
+).then(result => {
+	console.log(result.rows);
+})
+\end{jscode}
+\end{listing}
+
+
+\begin{listing}[H]
+\caption{Output af console.log fra eksempel \ref{lst:insertexample}}
+\begin{jscode}
+[{
+  id: 3,
+  email: 'test@example.com',
+  password: 'password123',
+  created_at: '2020-03-15T23:00:00.000Z',
+  name: 'John Doe'
+}],
+\end{jscode}
+\end{listing}
+
+\subsection{UPDATE}
+
+\margintext{\url{https://www.postgresql.org/docs/12/sql-update.html\#id-1.9.3.182.9}}
+
+Ved update angiver vi navnet på tabellen, efterfulgt at SET, og navnet på de kolonner vi ønsker at opdatere. Til sidst angives en WHERE query som fortæller hvilke rækker der skal opdateres.
+
+\begin{listing}[H]
+\begin{jscode}
+pool.query(`UPDATE order SET total_amount = $1, shipped = $2 WHERE id = $3`, [42.03, true, 11])
+\end{jscode}
+\end{listing}
+
+\end{document}
