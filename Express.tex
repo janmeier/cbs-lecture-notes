@@ -1,0 +1,294 @@
+\documentclass[english,course]{lecture}
+
+\usepackage{minted}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{graphicx}
+\graphicspath{ {./images/} }
+
+\title{Express intro}
+\attn{I kan finde kildekoden (skrevet i \LaTeX) til disse lecture notes på github - I er velkomne til at kommentere der hvis i finder fejl eller noget der kunne forklares bedre \url{https://github.com/janmeier/cbs-lecture-notes}}
+\author{Jan Aagaard Meier}
+\email{jam.digi@cbs.dk}
+
+\newminted{bash}{tabsize=2}
+\newminted{js}{linenos,tabsize=2,breaklines}
+\newminted{html}{linenos,tabsize=2,breaklines}
+\newmintinline{js}{}
+\newmintinline{sql}{}
+\renewcommand{\listingscaption}{Eksempel}
+\usepackage[figurename=Figur]{caption}
+
+\RequirePackage{accsupp}
+\renewcommand\theFancyVerbLine{
+    \BeginAccSupp{method=escape,ActualText={}}
+    {\rmfamily\tiny\arabic{FancyVerbLine}}
+    \EndAccSupp{}
+
+}
+
+\begin{document}
+
+\section{Installation}
+Vi starter med at installere express biblioteket:
+
+\begin{bashcode}
+npm install express
+\end{bashcode}
+
+Derefter er det tid til at test at der er hul igennem:
+
+\begin{listing}[H]
+\caption{Verdens simpleste express server}
+\label{lst:testconnection}
+\begin{jscode}
+const express = require('express');
+const app = express();
+
+app.listen(3000, () => {
+	console.log('listening');
+});
+\end{jscode}
+\end{listing}
+
+I kan fx gemme det i en fil ved navn \mintinline{bash}{test.js} og køre \mintinline{bash}{node test.js} i terminalen.
+
+Vi importerer express, opretter en ny instans som vi kalder \jsinline/app/, og beder den om at lytte på port 3000. Derefter giver vi den et callback, så der bliver skrevet 'listening' til konsollen når serveren er klar til at modtage forespørgsler.
+
+Hvis i skriver http://localhost:3000/ i jeres browser burde i få teksten 'Cannot GET /' tilbage. Det betyder at express serveren har modtaget jeres request, men at den ikke ved hvordan den skal svare.
+
+Mens i udvikler kan det være smart ikke at skulle genstarte serveren hele tiden. Til det kan i installere pakken nodemon via npm, og starte jeres server således (hvor app.js er navnet på den fil hvor i kalder \jsinline/app.listen/):
+
+\begin{bashcode}
+npx nodemon app.js
+\end{bashcode}
+
+\section{Lidt terminologi}
+
+Jeres node.js server skal fungere som et API til den frontend i lavede i forrige semester. API står for "application programming interface", altså en grænseflade mellem applikationer - i dette tilfælde en grænseflade mellem jeres database og jeres frontend. I dette tilfælde er det et HTTP API (applikationerne snakker altså sammen via HTTP protokollen, som er den protokol langt størstedelen af kommunikation på nettet foregår på), men der findes også mange andre typer API.
+
+Et API består af mange endpoints, eller på dansk berøringspunkter. Et endpoint kan fx returnere alle ordrer, eller gøre det muligt at opdatere en bruger. En route er en express specifik term for et endpoint.
+
+\section{Implementering}
+
+Lad os starte med at tilføje en route til at håndtere et GET request til / (også kaldet sitets rod), så vi ikke længere ser 'Cannot GET /' når vi åbner siden i browseren:
+
+\begin{jscode}
+app.get('', (req, res) => {
+	res.send('Hello');
+});
+\end{jscode}
+
+Vi kalder funktionen \jsinline/get/ på \jsinline/app/ objektet. Det betyder at vores callback funktionen håndterer GET requests. Som det første parameter til funktionen giver vi en tom streng, hvilket vil sige at vores route handler (callback funktion) håndterer routen /. Den sidste skråstreg i URLen er frivillig, og route handleren mather altså både http://localhost:3000 og http://localhost:3000/. \jsinline/res.send/ bruges til at sende tekst tilbage til brugeren.
+
+\subsection{Mappestruktur}
+
+Jeres projekt kommer nu til at indeholde både jeres frontend kode, og jeres server kode. For nemheds skyld kan det vær smart at få jeres express server til at håndtere alle jeres HTML filer, i stedet for at åbne dem direkte fra disken som i har gjort tidligere. Det gør det fx nemmere at sende request mellem jeres frontend og jeres API hvis de bliver håndteret fra den samme server. \textbf{Vigtigt} - I skal ikke til at arbejde med server side rendering eller lignende, hvor jeres express server står for dynamisk at bygge jeres HTML. Express serveren står blot for at håndtere de HTML, CSS og javascript filer i allerede har.
+
+\begin{listing}[H]
+\caption{Eksempel på mappestruktur. Mappen 'public' indeholder alt det frontend kode i allerede har, mens mappen 'routes' kommer til at indeholde det API kode i skriver. app.js sørger for at binde det hele sammen}
+\begin{bashcode}
+routes /
+	- users.js
+	...
+public /
+	- index.html
+	- index.css
+	- profile.html
+	- profile.js
+	...
+- app.js
+\end{bashcode}
+\end{listing}
+
+Derudover tilføjer i følgende til app.js - 
+\jsinline/app.use(express.static('public'))/, samtidig med at i fjerner \jsinline/app.get('')/ - Nu vil vi ikke længere se Hello når vi åbner siden i browseren, men index.html filen fra public mappen.
+
+\subsection{Users route}
+
+Nu dykker vi ned i hvordan en route med endpoints for brugere kunne se ud. Vores users.js route starter med at således ud
+
+\begin{listing}[H]
+\caption{routes/users.js}
+\label{lst:userroute}
+\begin{jscode}
+const express = require('express')
+const router = express.Router()
+
+module.exports = router;
+\end{jscode}
+\end{listing}
+
+I eksempel \ref{lst:userroute} starter vi med at oprette en ny router - Det er den som skal håndtere alle de endpoints som har noget med brugere at gøre. Lige nu kan den dog ikke noget. Til sidst eksporterer vi den, så den kan tilgås i app.js. I app.js (eksempel \ref{lst:app}) fortæller vi at alle router som starter med /users skal håndteres af vores router fra routes/users.js.
+
+\begin{listing}[H]
+\caption{app.js}
+\label{lst:app}
+\begin{jscode}
+const express = require('express');
+const app = express();
+app.listen(3000, () => {
+	console.log('listening');
+});
+app.use(express.static('public'))
+
+app.use('/users', require('./routes/users'))
+\end{jscode}
+\end{listing}
+
+Derefter kan vi starte med at lave en route som henter alle brugere i databasen:
+
+\begin{listing}[H]
+\caption{En route handler som returnerer alle brugere i databasen}
+\begin{jscode}
+router.get('', (req, res) => {
+	pool.query('SELECT * FROM "user"').then(result => {
+		res.json(result.rows);
+	})
+});
+\end{jscode}
+\end{listing}
+
+På linje 1 fortæller vi routeren at når den modtager et GET request til \jsinline/''/ skal den køre vores route handler. Handleren bliver kaldt med to argumenter - \jsinline/req/, requestet som giver os oplysninger om brugeren forespørgsel og \jsinline/res/, responset som giver os mulighed for at bestemme hvordan serveren skal svare. Da vi vil returnere alle brugere ligemeget hvad kan vi ignorere \jsinline/req/, men \jsinline/res/ bruger vi senere. 
+
+På linje 2 laver vi en simpel SQL query som selecter alt data fra user
+
+På linje 3 har vi fået et \jsinline/result/ objekt, som indeholder svaret fra databasen. Vi kalder metoden \jsinline/json/ på \jsinline/res/ objektet, som siger at vi gerne vil sende JSON tilbage til klienten.
+
+Det næste vi gerne vil kunne er at hente en enkelt bruger, ud fra deres id
+
+\begin{listing}[H]
+\caption{Hent en enkelt bruger ud fra et ID}
+\begin{minted}[linenos,tabsize=2,breaklines,escapeinside=||]{js}
+router.get(|\colorbox{red}{/:id}|, (req, res) => {
+	pool.query('SELECT * FROM "user" WHERE id = $1', |\colorbox{red}{[req.params.id]}|).then(result => {
+		res.json(result.rows);
+	})
+});
+\end{minted}
+\end{listing}
+
+Læg mærke til hvordan vi på linje 1 har tilføjet id som en parameter ved at skrive \jsinline/':id'/. Denne parameter er tilgængelig i \jsinline/req.params/, og vi bruger den til at lave en parameterized query. Hvis i åbner http://localhost:3000/users/1 i browseren skulle i nu kunne se data for brugeren med i 1.
+
+Som det næste vil vi gerne kunne opdatere vores brugere. Forestil dig at vi har en meget simpel HTML side til dette:
+
+\begin{listing}[H]
+\caption{profile.html}
+\label{lst:profilehtml}
+\begin{htmlcode}
+<html>
+	<body>
+		<form id="profileform" action="/users/1" method="POST">
+			Name: <input id="profilename" name="name" type="text" />
+		</form>
+	</body>
+</html>
+\end{htmlcode}
+\end{listing}
+
+Læg mærke til, at formens action er sat til '/users/1', og at HTTP metoden er sat til POST. I dette eksempel er brugerid hardcoded til 1, men i praksis vil det selvfølgelig skulle være dynamisk, så i skal sætte det via javascript i browseren - mere om dette senere. Vi tilføjer følgende kode til user.js for at kunne håndtere dette request:
+
+\begin{listing}[H]
+\caption{Opdater en bruger}
+\begin{jscode}
+router.post('/:id', (req, res) => {
+	pool.query('UPDATE "user" SET name = $1 WHERE id = $2', [req.body.name, req.params.id]).then(result => {
+		res.redirect('profile.html');
+	})
+});
+\end{jscode}
+\end{listing}
+
+For at kunne læse det data der bliver sendt fra formen skal vi installere pakken 'body-parser', og tilføje følgende til app.js før vi importerer users routen.
+
+\begin{jscode}
+const bodyParser = require('body-parser')
+app.use(bodyParser.urlencoded({ extended: false }))
+\end{jscode}
+
+Vi har tilføjet \jsinline/res.redirect('profile.html')/ på linje 4 for at fortælle at når brugeren er blevet opdatere i databasen skal browseren sendes tilbage til profile.html siden. Vi behøver ikke at sende brugeren tilbage til den side requestet kom fra, men kan redirecte til hvilken side det skulle være.
+
+\subsection{Middleware, sessions og login}
+
+Langt de fleste af jeres programmer har brug for at brugeren kan logge ind, så i kan hente data for en specifikt bruger og sørge for at en bruger kun opdaterer det data han har rettigheder til. I bogen bruges der sessions, specifikt express-session. I er velkomne til at bruge sessions, men da sessions gemmer data om brugeren på serveren, lever det ikke op til REST principperne. Et alternativ er at bruge JSON webtokens.
+
+\begin{listing}[H]
+\caption{Login via JWT}
+\begin{jscode}
+const jwt = require('jsonwebtoken');
+const secret = 'verysecret';
+
+router.post('/login', (req, res) => {
+	// check brugernavn og password mod databasen - Hvis korrekt:
+	const token = jwt.sign({ user_id: user.id }, secret);
+	res.cookie('jwt-token', token);
+	res.send();
+});
+\end{jscode}
+\end{listing}
+
+Ligesom i express-session sætter vi en cookie for at holde styr på hvem der er logget ind. Men i modsætning til express-session, behøver serveren ikke at holde styr på noget state. For at få adgang til brugeren tilføjer vi en \textit{middleware}, et stykke kode som kører før alle route handlers
+
+\begin{listing}[H]
+\caption{En middleware som sætter req.user, hvis jwt-token cookien er sat}
+\label{lst:usermiddleware}
+\begin{jscode}
+router.use((req, res, next) => {
+	if (req.cookies && req.cookies['jwt-token']) {
+		const decoded = jwt.verify(req.cookies['jwt-token'], secret);
+
+		pool.query('SELECT * FROM "user" WHERE id = $1', [decoded.user_id]).then(result => {
+			req.user = result.rows[0];
+			next();
+		});
+	} else {
+		next();
+	}
+});
+\end{jscode}
+\end{listing}
+
+I middlewares er det vigtigt, at kalde \jsinline/next/ funktionen når man er færdig (i dette tilfælde når \jsinline/req.user/ er blevet sat). Det fortæller express at vi er færdige med vores asynkrone kald, og express kan gå videre til næste middleware eller route handler.
+
+Derudover tilføjer vi følgende i app.js for at kunne tilgå \jsinline/req.cookies/.
+
+\begin{jscode} 
+const cookieParser = require('cookie-parser');
+app.use(cookieParser());
+\end{jscode}
+
+Når vi sætter \jsinline/req.user/ vil den være tilgængelig i alle route handlers. Det betyder at vi meget nemt kan tilføje en /users/me route, så brugere der er logget ind kan hente data om sig selv.
+
+\begin{listing}[H]
+\caption{Vi behøver kun en enkelt linje for at implementere /users/me, da req.user allerede er sat af middlewaren i eksempel \ref{lst:usermiddleware}}
+\begin{jscode}
+router.get('/me', (req, res) => {    
+	res.json(req.user);
+});
+\end{jscode}
+\end{listing}
+
+\subsection{Visning af data i frontenden}
+
+Nu er brugeren logget ind. Lad os gå tilbage til profile.html siden, og forestille os, at vi gerne vil opdatere den så brugerens nuværende navn vises, og så IDet i action attributten på formen passer. HTMLen er den samme som i eksempel \ref{lst:profilehtml}. Vi tilføjer følgende javascript, enten via et inline script på profile.html siden, eller i en ekstern javascript fil:
+
+\begin{listing}[H]
+\caption{profile.js}
+\begin{jscode}
+window.onload = function() {
+	const form = document.getElementById('profileform');
+	const name = document.getElementById('profilename');
+
+	fetch('/users/me')
+		.then(response => response.json())
+		.then(json => {
+			form.action = `/users/${json.id}`;
+			name.value = json.name;
+		});
+};	
+\end{jscode}
+\end{listing}
+
+Vi bruger \jsinline/fetch/ til at hente data fra vores API.\margintext{Læs mere om fetch på \url{https://eloquentjavascript.net/18_http.html\#h_1Iqv5okrKE}} Efter serveren svarer tilbage skal vi kalde \jsinline/response.json/ for at få et JSON objekt - det sker på linje 6. Når JSON dataen er tilgængelig sætter vi action på formen ud fra brugerens id, og værdien af name feltet til at være brugerens navn (linje 8 og 9).
+
+\end{document}
